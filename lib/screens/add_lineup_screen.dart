@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -216,12 +217,14 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                       icon: const Icon(Icons.photo_library),
                       label: const Text('相册'),
                     ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.camera),
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text('拍照'),
-                    ),
+                    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) ...[
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('拍照'),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 24),
