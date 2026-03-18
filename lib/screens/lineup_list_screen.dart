@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/agent.dart';
 import '../providers/lineup_provider.dart';
 import 'add_lineup_screen.dart';
 import 'lineup_detail_screen.dart';
@@ -46,62 +45,56 @@ class _LineupListScreenState extends State<LineupListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.mapName} - 点位'),
+        title: Text(widget.mapName),
       ),
       body: Consumer<LineupProvider>(
         builder: (context, provider, _) {
-          return Column(
-            children: [
-              // Filter bar
-              _buildFilterBar(context, provider),
-              const Divider(height: 1),
-              // Lineup list
-              Expanded(
-                child: provider.lineups.isEmpty
-                    ? const Center(
-                        child: Text('暂无点位记录，点击右下角添加'),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: provider.lineups.length,
-                        itemBuilder: (context, index) {
-                          final lineup = provider.lineups[index];
-                          return FutureBuilder<Agent?>(
-                            future: provider.getAgentById(lineup.agentId),
-                            builder: (context, snapshot) {
-                              final agentName = snapshot.data?.name ?? '';
-                              return Card(
-                                margin: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                child: ListTile(
-                                  title: Text(lineup.title),
-                                  subtitle: Text(
-                                    '$agentName · ${lineup.side == 'attack' ? '进攻' : '防守'} · ${lineup.site}点',
-                                  ),
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: () async {
-                                    await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => LineupDetailScreen(
-                                          lineup: lineup,
-                                        ),
-                                      ),
-                                    );
-                                    _loadLineups();
-                                  },
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
+          final agentNameById = {
+            for (final agent in provider.agents) agent.id: agent.name,
+          };
+
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth >= 1024;
+              final content = _buildLineupContent(
+                context,
+                provider,
+                agentNameById,
+              );
+
+              return Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1280),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    child: isWide
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 320,
+                                child: _buildFilterPanel(context, provider),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(child: content),
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              _buildFilterPanel(context, provider),
+                              const SizedBox(height: 16),
+                              Expanded(child: content),
+                            ],
+                          ),
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           await Navigator.push(
             context,
@@ -115,63 +108,229 @@ class _LineupListScreenState extends State<LineupListScreen> {
           );
           _loadLineups();
         },
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('添加点位'),
       ),
     );
   }
 
-  Widget _buildFilterBar(BuildContext context, LineupProvider provider) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          // Agent filter
-          _buildDropdown<String?>(
-            value: provider.selectedAgentId,
-            hint: '特工',
-            items: [
-              const DropdownMenuItem(value: null, child: Text('全部特工')),
-              ...provider.agents.map(
-                (a) => DropdownMenuItem(value: a.id, child: Text(a.name)),
+  Widget _buildFilterPanel(BuildContext context, LineupProvider provider) {
+    final theme = Theme.of(context);
+    final activeFilters = [
+      provider.selectedAgentId,
+      provider.selectedSide,
+      provider.selectedSite,
+    ].where((e) => e != null).length;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '筛选条件',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              activeFilters == 0 ? '当前显示全部点位。' : '已启用 $activeFilters 个筛选条件。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-            ],
-            onChanged: (val) {
-              provider.setAgentFilter(val);
+            ),
+            const SizedBox(height: 18),
+            _buildDropdown<String?>(
+              value: provider.selectedAgentId,
+              hint: '特工',
+              items: [
+                const DropdownMenuItem(value: null, child: Text('全部特工')),
+                ...provider.agents.map(
+                  (a) => DropdownMenuItem(value: a.id, child: Text(a.name)),
+                ),
+              ],
+              onChanged: (val) {
+                provider.setAgentFilter(val);
+                _loadLineups();
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildDropdown<String?>(
+              value: provider.selectedSide,
+              hint: '攻防',
+              items: const [
+                DropdownMenuItem(value: null, child: Text('全部阵营')),
+                DropdownMenuItem(value: 'attack', child: Text('进攻')),
+                DropdownMenuItem(value: 'defense', child: Text('防守')),
+              ],
+              onChanged: (val) {
+                provider.setSideFilter(val);
+                _loadLineups();
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildDropdown<String?>(
+              value: provider.selectedSite,
+              hint: '包点',
+              items: const [
+                DropdownMenuItem(value: null, child: Text('全部包点')),
+                DropdownMenuItem(value: 'A', child: Text('A点')),
+                DropdownMenuItem(value: 'B', child: Text('B点')),
+                DropdownMenuItem(value: 'C', child: Text('C点')),
+              ],
+              onChanged: (val) {
+                provider.setSiteFilter(val);
+                _loadLineups();
+              },
+            ),
+            const SizedBox(height: 16),
+            if (activeFilters > 0)
+              TextButton.icon(
+                onPressed: () {
+                  provider.clearFilters();
+                  _loadLineups();
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('清空筛选'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLineupContent(
+    BuildContext context,
+    LineupProvider provider,
+    Map<String, String> agentNameById,
+  ) {
+    final theme = Theme.of(context);
+
+    if (provider.lineups.isEmpty) {
+      return Card(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.photo_library_outlined,
+                  size: 44,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '暂无点位记录',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '点击右下角按钮，添加当前地图的首个战术点位。',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: ListView.separated(
+        padding: const EdgeInsets.all(12),
+        itemCount: provider.lineups.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final lineup = provider.lineups[index];
+          final agentName = agentNameById[lineup.agentId] ?? '未知特工';
+
+          return InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LineupDetailScreen(lineup: lineup),
+                ),
+              );
               _loadLineups();
             },
-          ),
-          // Side filter
-          _buildDropdown<String?>(
-            value: provider.selectedSide,
-            hint: '攻防',
-            items: const [
-              DropdownMenuItem(value: null, child: Text('全部')),
-              DropdownMenuItem(value: 'attack', child: Text('进攻')),
-              DropdownMenuItem(value: 'defense', child: Text('防守')),
-            ],
-            onChanged: (val) {
-              provider.setSideFilter(val);
-              _loadLineups();
-            },
-          ),
-          // Site filter
-          _buildDropdown<String?>(
-            value: provider.selectedSite,
-            hint: '包点',
-            items: const [
-              DropdownMenuItem(value: null, child: Text('全部')),
-              DropdownMenuItem(value: 'A', child: Text('A点')),
-              DropdownMenuItem(value: 'B', child: Text('B点')),
-              DropdownMenuItem(value: 'C', child: Text('C点')),
-            ],
-            onChanged: (val) {
-              provider.setSiteFilter(val);
-              _loadLineups();
-            },
-          ),
-        ],
+            child: Ink(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withOpacity(0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          lineup.title,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      Chip(label: Text(agentName)),
+                      Chip(
+                        label:
+                            Text(lineup.side == 'attack' ? '进攻' : '防守'),
+                      ),
+                      Chip(label: Text('${lineup.site}点')),
+                    ],
+                  ),
+                  if (lineup.description.trim().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      lineup.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -182,21 +341,13 @@ class _LineupListScreenState extends State<LineupListScreen> {
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
+    return DropdownButtonFormField<T>(
+      value: value,
+      decoration: InputDecoration(
+        labelText: hint,
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          hint: Text(hint),
-          items: items,
-          onChanged: onChanged,
-          isDense: true,
-        ),
-      ),
+      items: items,
+      onChanged: onChanged,
     );
   }
 }
