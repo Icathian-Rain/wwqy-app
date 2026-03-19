@@ -98,4 +98,26 @@ class LineupRepository {
     final db = await _dbHelper.database;
     await db.insert('lineup_images', image.toMap());
   }
+
+  /// 返回指定点位列表中每个点位的第一张图路径，key 为 lineup_id
+  Future<Map<String, String>> getFirstImageByLineupIds(List<String> lineupIds) async {
+    if (lineupIds.isEmpty) return {};
+    final db = await _dbHelper.database;
+    final placeholders = lineupIds.map((_) => '?').join(',');
+    final results = await db.rawQuery(
+      'SELECT lineup_id, image_path FROM lineup_images WHERE lineup_id IN ($placeholders) GROUP BY lineup_id ORDER BY sort_order ASC',
+      lineupIds,
+    );
+    return {for (final r in results) r['lineup_id'] as String: r['image_path'] as String};
+  }
+
+  /// 返回指定游戏下每张地图的点位数量，key 为 map_id
+  Future<Map<String, int>> getLineupCountByMap(String gameId) async {
+    final db = await _dbHelper.database;
+    final results = await db.rawQuery(
+      'SELECT map_id, COUNT(*) as cnt FROM lineups WHERE game_id = ? GROUP BY map_id',
+      [gameId],
+    );
+    return {for (final r in results) r['map_id'] as String: r['cnt'] as int};
+  }
 }

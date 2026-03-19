@@ -14,8 +14,23 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LineupProvider>().loadGames();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final provider = context.read<LineupProvider>();
+      await provider.loadGames();
+      if (!mounted) return;
+      // 只有一款游戏时直接跳过首页
+      if (provider.games.length == 1) {
+        final game = provider.games.first;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MapSelectScreen(
+              gameId: game.id,
+              gameName: game.name,
+            ),
+          ),
+        );
+      }
     });
   }
 

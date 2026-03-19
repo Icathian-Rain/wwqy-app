@@ -15,6 +15,10 @@ class LineupProvider extends ChangeNotifier {
   List<GameMap> _maps = [];
   List<Agent> _agents = [];
   List<Lineup> _lineups = [];
+  Map<String, int> _mapLineupCounts = {};
+  Map<String, String> _lineupFirstImages = {};
+  bool _loading = false;
+  String? _error;
 
   // Filter state
   String? _selectedAgentId;
@@ -25,6 +29,10 @@ class LineupProvider extends ChangeNotifier {
   List<GameMap> get maps => _maps;
   List<Agent> get agents => _agents;
   List<Lineup> get lineups => _lineups;
+  Map<String, int> get mapLineupCounts => _mapLineupCounts;
+  Map<String, String> get lineupFirstImages => _lineupFirstImages;
+  bool get loading => _loading;
+  String? get error => _error;
   String? get selectedAgentId => _selectedAgentId;
   String? get selectedSide => _selectedSide;
   String? get selectedSite => _selectedSite;
@@ -36,6 +44,7 @@ class LineupProvider extends ChangeNotifier {
 
   Future<void> loadMaps(String gameId) async {
     _maps = await _repository.getMapsForGame(gameId);
+    _mapLineupCounts = await _repository.getLineupCountByMap(gameId);
     notifyListeners();
   }
 
@@ -48,14 +57,26 @@ class LineupProvider extends ChangeNotifier {
     required String gameId,
     required String mapId,
   }) async {
-    _lineups = await _repository.getLineups(
-      gameId: gameId,
-      mapId: mapId,
-      agentId: _selectedAgentId,
-      side: _selectedSide,
-      site: _selectedSite,
-    );
+    _loading = true;
+    _error = null;
     notifyListeners();
+    try {
+      _lineups = await _repository.getLineups(
+        gameId: gameId,
+        mapId: mapId,
+        agentId: _selectedAgentId,
+        side: _selectedSide,
+        site: _selectedSite,
+      );
+      _lineupFirstImages = await _repository.getFirstImageByLineupIds(
+        _lineups.map((l) => l.id).toList(),
+      );
+    } catch (e) {
+      _error = '加载点位失败：$e';
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
   }
 
   void setAgentFilter(String? agentId) {
@@ -85,22 +106,28 @@ class LineupProvider extends ChangeNotifier {
   }
 
   Future<void> addLineup(Lineup lineup, List<LineupImage> images) async {
-    await _repository.insertLineup(lineup);
-    for (final image in images) {
-      await _repository.insertLineupImage(image);
+    try {
+      await _repository.insertLineup(lineup);
+      for (final image in images) {
+        await _repository.insertLineupImage(image);
+      }
+    } catch (e) {
+      throw Exception('保存点位失败：$e');
     }
   }
 
   Future<void> deleteLineup(String lineupId) async {
-    // Get images before deleting from DB
-    final images = await _repository.getLineupImages(lineupId);
-    await _repository.deleteLineup(lineupId);
-    // Delete image files from disk
-    for (final img in images) {
-      final file = File(img.imagePath);
-      if (await file.exists()) {
-        await file.delete();
+    try {
+      final images = await _repository.getLineupImages(lineupId);
+      await _repository.deleteLineup(lineupId);
+      for (final img in images) {
+        final file = File(img.imagePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
       }
+    } catch (e) {
+      throw Exception('删除点位失败：$e');
     }
   }
 

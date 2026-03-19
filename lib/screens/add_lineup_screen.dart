@@ -37,6 +37,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   final List<File> _selectedImages = [];
   bool _saving = false;
   bool _submitted = false;
+  bool _saved = false;
 
   @override
   void initState() {
@@ -50,6 +51,11 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    if (!_saved) {
+      for (final file in _selectedImages) {
+        file.delete().ignore();
+      }
+    }
     super.dispose();
   }
 
@@ -74,33 +80,43 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
 
     setState(() => _saving = true);
 
-    final lineupId = _uuid.v4();
-    final lineup = Lineup(
-      id: lineupId,
-      gameId: widget.gameId,
-      mapId: widget.mapId,
-      agentId: _selectedAgentId!,
-      side: _selectedSide,
-      site: _selectedSite,
-      title: _titleController.text.trim(),
-      description: _descriptionController.text.trim(),
-      createdAt: DateTime.now(),
-    );
+    try {
+      final lineupId = _uuid.v4();
+      final lineup = Lineup(
+        id: lineupId,
+        gameId: widget.gameId,
+        mapId: widget.mapId,
+        agentId: _selectedAgentId!,
+        side: _selectedSide,
+        site: _selectedSite,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        createdAt: DateTime.now(),
+      );
 
-    final images = <LineupImage>[];
-    for (var i = 0; i < _selectedImages.length; i++) {
-      images.add(LineupImage(
-        id: _uuid.v4(),
-        lineupId: lineupId,
-        imagePath: _selectedImages[i].path,
-        sortOrder: i,
-      ));
-    }
+      final images = <LineupImage>[];
+      for (var i = 0; i < _selectedImages.length; i++) {
+        images.add(LineupImage(
+          id: _uuid.v4(),
+          lineupId: lineupId,
+          imagePath: _selectedImages[i].path,
+          sortOrder: i,
+        ));
+      }
 
-    await context.read<LineupProvider>().addLineup(lineup, images);
+      await context.read<LineupProvider>().addLineup(lineup, images);
 
-    if (mounted) {
-      Navigator.pop(context);
+      if (mounted) {
+        _saved = true;
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -108,10 +124,35 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('添加点位 · ${widget.mapName}'),
-      ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final hasContent = _titleController.text.isNotEmpty ||
+            _descriptionController.text.isNotEmpty ||
+            _selectedAgentId != null ||
+            _selectedImages.isNotEmpty;
+        if (!hasContent) {
+          Navigator.pop(context);
+          return;
+        }
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('放弃编辑？'),
+            content: const Text('当前填写的内容将不会保存。'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('继续编辑')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('放弃')),
+            ],
+          ),
+        );
+        if (confirmed == true && context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('添加点位 · ${widget.mapName}'),
+        ),
       body: Consumer<LineupProvider>(
         builder: (context, provider, _) {
           return LayoutBuilder(
@@ -201,6 +242,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
           );
         },
       ),
+      ),
     );
   }
 
@@ -213,21 +255,43 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
           subtitle: '先确定特工和点位标题。带 * 的字段为必填项。',
           child: Column(
             children: [
-              DropdownButtonFormField<String>(
-                value: _selectedAgentId,
-                decoration: InputDecoration(
-                  labelText: '选择特工 *',
-                  errorText:
-                      _submitted && _selectedAgentId == null ? '请选择特工' : null,
+              // 特工分组 Chip 选择器
+              if (_submitted && _selectedAgentId == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '请选择特工',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                  ),
                 ),
-                items: provider.agents
-                    .map((a) => DropdownMenuItem(
-                          value: a.id,
-                          child: Text('${a.name} (${a.role})'),
-                        ))
-                    .toList(),
-                onChanged: (val) => setState(() => _selectedAgentId = val),
-              ),
+              ...() {
+                final grouped = <String, List<dynamic>>{};
+                for (final a in provider.agents) {
+                  grouped.putIfAbsent(a.role, () => []).add(a);
+                }
+                return grouped.entries.map((entry) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6, top: 4),
+                      child: Text(entry.key,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        )),
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: entry.value.map<Widget>((a) => ChoiceChip(
+                        label: Text(a.name),
+                        selected: _selectedAgentId == a.id,
+                        onSelected: (_) => setState(() => _selectedAgentId = a.id),
+                      )).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ));
+              }(),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _titleController,

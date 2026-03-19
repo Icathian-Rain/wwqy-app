@@ -41,6 +41,8 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
+          final counts = provider.mapLineupCounts;
+
           return LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;
@@ -116,7 +118,7 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: crossAxisCount,
-                          childAspectRatio: width >= 840 ? 1.15 : 1.08,
+                          mainAxisExtent: 200,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
                         ),
@@ -157,7 +159,7 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                                         color: theme.colorScheme.primary,
                                       ),
                                     ),
-                                    const Spacer(),
+                                    const SizedBox(height: 12),
                                     Text(
                                       map.name,
                                       style:
@@ -167,7 +169,7 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '查看该地图的点位记录',
+                                      '${counts[map.id] ?? 0} 条点位',
                                       style:
                                           theme.textTheme.bodyMedium?.copyWith(
                                         color: theme.colorScheme.onSurfaceVariant,

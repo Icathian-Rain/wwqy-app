@@ -64,8 +64,16 @@ class _LineupDetailScreenState extends State<LineupDetailScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await context.read<LineupProvider>().deleteLineup(widget.lineup.id);
-      if (mounted) Navigator.pop(context);
+      try {
+        await context.read<LineupProvider>().deleteLineup(widget.lineup.id);
+        if (mounted) Navigator.pop(context);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
@@ -86,6 +94,7 @@ class _LineupDetailScreenState extends State<LineupDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_outline),
+            color: Colors.red,
             onPressed: _deleteLineup,
           ),
         ],
@@ -192,7 +201,27 @@ class _LineupDetailScreenState extends State<LineupDetailScreen> {
               ),
             ),
             if (_images.length > 1) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              // Dots indicator
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(_images.length, (i) {
+                  final selected = i == _currentIndex;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: selected ? 16 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 12),
               SizedBox(
                 height: 84,
                 child: ListView.separated(
