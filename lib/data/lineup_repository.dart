@@ -75,6 +75,28 @@ class LineupRepository {
     await db.insert('lineups', lineup.toMap());
   }
 
+  Future<void> updateLineup(Lineup lineup, List<LineupImage> images) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      await txn.update(
+        'lineups',
+        {
+          'agent_id': lineup.agentId,
+          'side': lineup.side,
+          'site': lineup.site,
+          'title': lineup.title,
+          'description': lineup.description,
+        },
+        where: 'id = ?',
+        whereArgs: [lineup.id],
+      );
+      await txn.delete('lineup_images', where: 'lineup_id = ?', whereArgs: [lineup.id]);
+      for (final image in images) {
+        await txn.insert('lineup_images', image.toMap());
+      }
+    });
+  }
+
   Future<void> deleteLineup(String lineupId) async {
     final db = await _dbHelper.database;
     // Delete associated images first

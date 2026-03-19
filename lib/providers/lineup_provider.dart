@@ -7,6 +7,7 @@ import '../models/agent.dart';
 import '../models/lineup.dart';
 import '../models/lineup_image.dart';
 import '../data/lineup_repository.dart';
+import '../utils/image_helper.dart';
 
 class LineupProvider extends ChangeNotifier {
   final LineupRepository _repository = LineupRepository();
@@ -113,6 +114,21 @@ class LineupProvider extends ChangeNotifier {
       }
     } catch (e) {
       throw Exception('保存点位失败：$e');
+    }
+  }
+
+  Future<void> updateLineup(
+    Lineup lineup,
+    List<LineupImage> images,
+    List<String> removedImagePaths,
+  ) async {
+    try {
+      await _repository.updateLineup(lineup, images);
+      for (final imagePath in removedImagePaths.toSet()) {
+        await ImageHelper.deleteImage(imagePath);
+      }
+    } catch (e) {
+      throw Exception('更新点位失败：$e');
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/lineup.dart';
 import '../models/lineup_image.dart';
 import '../providers/lineup_provider.dart';
+import 'add_lineup_screen.dart';
 
 class LineupDetailScreen extends StatefulWidget {
   final Lineup lineup;
@@ -42,6 +43,23 @@ class _LineupDetailScreenState extends State<LineupDetailScreen> {
       _agentName = agent?.name ?? '';
       _loading = false;
     });
+  }
+
+  Future<void> _editLineup() async {
+    final edited = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddLineupScreen(
+          gameId: widget.lineup.gameId,
+          mapId: widget.lineup.mapId,
+          initialLineup: widget.lineup,
+        ),
+      ),
+    );
+
+    if (edited == true && mounted) {
+      Navigator.pop(context, true);
+    }
   }
 
   Future<void> _deleteLineup() async {
@@ -92,6 +110,10 @@ class _LineupDetailScreenState extends State<LineupDetailScreen> {
       appBar: AppBar(
         title: const Text('点位详情'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: _editLineup,
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             color: Colors.red,

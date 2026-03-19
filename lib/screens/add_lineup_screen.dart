@@ -12,13 +12,15 @@ import '../utils/image_helper.dart';
 class AddLineupScreen extends StatefulWidget {
   final String gameId;
   final String mapId;
-  final String mapName;
+  final String? mapName;
+  final Lineup? initialLineup;
 
   const AddLineupScreen({
     super.key,
     required this.gameId,
     required this.mapId,
-    required this.mapName,
+    this.mapName,
+    this.initialLineup,
   });
 
   @override
@@ -34,16 +36,34 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   String? _selectedAgentId;
   String _selectedSide = 'attack';
   String _selectedSite = 'A';
-  final List<File> _selectedImages = [];
+  final List<_EditableImageItem> _imageItems = [];
+  final Set<String> _removedExistingImagePaths = {};
+  final Set<String> _pendingNewImagePaths = {};
+  List<String> _initialImagePaths = [];
+  bool _loadingExistingImages = false;
   bool _saving = false;
   bool _submitted = false;
   bool _saved = false;
 
+  bool get _isEditMode => widget.initialLineup != null;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LineupProvider>().loadAgents(widget.gameId);
+    final initialLineup = widget.initialLineup;
+    if (initialLineup != null) {
+      _titleController.text = initialLineup.title;
+      _descriptionController.text = initialLineup.description;
+      _selectedAgentId = initialLineup.agentId;
+      _selectedSide = initialLineup.side;
+      _selectedSite = initialLineup.site;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await context.read<LineupProvider>().loadAgents(widget.gameId);
+      if (_isEditMode) {
+        await _loadExistingImages();
+      }
     });
   }
 
@@ -52,36 +72,108 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     if (!_saved) {
-      for (final file in _selectedImages) {
-        file.delete().ignore();
+      for (final imagePath in _pendingNewImagePaths) {
+        try {
+          final file = File(imagePath);
+          if (file.existsSync()) {
+            file.deleteSync();
+          }
+        } catch (_) {}
       }
     }
     super.dispose();
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final file = await ImageHelper.pickImage(source: source);
-    if (file != null) {
-      setState(() => _selectedImages.add(file));
+  Future<void> _loadExistingImages() async {
+    setState(() => _loadingExistingImages = true);
+    try {
+      final images = await context
+          .read<LineupProvider>()
+          .getLineupImages(widget.initialLineup!.id);
+      if (!mounted) return;
+      setState(() {
+        _imageItems
+          ..clear()
+          ..addAll(images.map((image) => _EditableImageItem.existing(
+                imageId: image.id,
+                imagePath: image.imagePath,
+              )));
+        _initialImagePaths = images.map((image) => image.imagePath).toList();
+        _loadingExistingImages = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingExistingImages = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('加载点位图片失败：$e'), backgroundColor: Colors.red),
+      );
     }
   }
 
-  void _removeImage(int index) {
-    setState(() => _selectedImages.removeAt(index));
+  Future<void> _pickImage(ImageSource source) async {
+    final file = await ImageHelper.pickImage(source: source);
+    if (file == null) return;
+    setState(() {
+      _imageItems.add(_EditableImageItem.newFile(file));
+      _pendingNewImagePaths.add(file.path);
+    });
+  }
+
+  Future<void> _removeImage(int index) async {
+    final item = _imageItems[index];
+    setState(() {
+      _imageItems.removeAt(index);
+      if (item.isExisting) {
+        _removedExistingImagePaths.add(item.file.path);
+      } else {
+        _pendingNewImagePaths.remove(item.file.path);
+      }
+    });
+
+    if (!item.isExisting) {
+      await ImageHelper.deleteImage(item.file.path);
+    }
+  }
+
+  bool _hasUnsavedChanges() {
+    if (!_isEditMode) {
+      return _titleController.text.isNotEmpty ||
+          _descriptionController.text.isNotEmpty ||
+          _selectedAgentId != null ||
+          _imageItems.isNotEmpty;
+    }
+
+    final initialLineup = widget.initialLineup!;
+    final currentImagePaths = _imageItems.map((item) => item.file.path).toList();
+    return _titleController.text != initialLineup.title ||
+        _descriptionController.text != initialLineup.description ||
+        _selectedAgentId != initialLineup.agentId ||
+        _selectedSide != initialLineup.side ||
+        _selectedSite != initialLineup.site ||
+        !_samePathOrder(currentImagePaths, _initialImagePaths);
+  }
+
+  bool _samePathOrder(List<String> current, List<String> initial) {
+    if (current.length != initial.length) return false;
+    for (var i = 0; i < current.length; i++) {
+      if (current[i] != initial[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _save() async {
     setState(() => _submitted = true);
 
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedAgentId == null || _selectedImages.isEmpty) {
+    if (_selectedAgentId == null || _imageItems.isEmpty) {
       return;
     }
 
     setState(() => _saving = true);
 
     try {
-      final lineupId = _uuid.v4();
+      final initialLineup = widget.initialLineup;
+      final lineupId = initialLineup?.id ?? _uuid.v4();
       final lineup = Lineup(
         id: lineupId,
         gameId: widget.gameId,
@@ -91,24 +183,35 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
         site: _selectedSite,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
-        createdAt: DateTime.now(),
+        createdAt: initialLineup?.createdAt ?? DateTime.now(),
       );
 
       final images = <LineupImage>[];
-      for (var i = 0; i < _selectedImages.length; i++) {
+      for (var i = 0; i < _imageItems.length; i++) {
+        final item = _imageItems[i];
         images.add(LineupImage(
-          id: _uuid.v4(),
+          id: item.imageId ?? _uuid.v4(),
           lineupId: lineupId,
-          imagePath: _selectedImages[i].path,
+          imagePath: item.file.path,
           sortOrder: i,
         ));
       }
 
-      await context.read<LineupProvider>().addLineup(lineup, images);
+      final provider = context.read<LineupProvider>();
+      if (_isEditMode) {
+        await provider.updateLineup(
+          lineup,
+          images,
+          _removedExistingImagePaths.toList(),
+        );
+      } else {
+        await provider.addLineup(lineup, images);
+      }
 
       if (mounted) {
         _saved = true;
-        Navigator.pop(context);
+        _pendingNewImagePaths.clear();
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -123,16 +226,15 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final addTitle = widget.mapName == null || widget.mapName!.isEmpty
+        ? '添加点位'
+        : '添加点位 · ${widget.mapName}';
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        final hasContent = _titleController.text.isNotEmpty ||
-            _descriptionController.text.isNotEmpty ||
-            _selectedAgentId != null ||
-            _selectedImages.isNotEmpty;
-        if (!hasContent) {
+        if (!_hasUnsavedChanges()) {
           Navigator.pop(context);
           return;
         }
@@ -151,97 +253,98 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text('添加点位 · ${widget.mapName}'),
+          title: Text(_isEditMode ? '编辑点位' : addTitle),
         ),
-      body: Consumer<LineupProvider>(
-        builder: (context, provider, _) {
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 1024;
-              final formSection = _buildFormSection(context, provider);
-              final imageSection = _buildImageSection(context);
+        body: Consumer<LineupProvider>(
+          builder: (context, provider, _) {
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= 1024;
+                final formSection = _buildFormSection(context, provider);
+                final imageSection = _buildImageSection(context);
 
-              return Form(
-                key: _formKey,
-                autovalidateMode: _submitted
-                    ? AutovalidateMode.onUserInteraction
-                    : AutovalidateMode.disabled,
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1280),
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: theme.colorScheme.outlineVariant
-                                  .withOpacity(0.4),
+                return Form(
+                  key: _formKey,
+                  autovalidateMode: _submitted
+                      ? AutovalidateMode.onUserInteraction
+                      : AutovalidateMode.disabled,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1280),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHigh,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: theme.colorScheme.outlineVariant.withOpacity(0.4),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _isEditMode ? '修改当前战术点位' : '录入新的战术点位',
+                                  style: theme.textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _isEditMode
+                                      ? '可修改基础信息并增删图片，保存后会直接更新当前点位。'
+                                      : '请先填写基础信息，再补充图片和使用说明。图片会复制到应用本地目录中保存。',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '录入新的战术点位',
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '请先填写基础信息，再补充图片和使用说明。图片会复制到应用本地目录中保存。',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (isWide)
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(flex: 6, child: formSection),
-                              const SizedBox(width: 16),
-                              Expanded(flex: 5, child: imageSection),
-                            ],
-                          )
-                        else ...[
-                          formSection,
                           const SizedBox(height: 16),
-                          imageSection,
-                        ],
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          height: 54,
-                          child: ElevatedButton(
-                            onPressed: _saving ? null : _save,
-                            child: _saving
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('保存点位'),
+                          if (isWide)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(flex: 6, child: formSection),
+                                const SizedBox(width: 16),
+                                Expanded(flex: 5, child: imageSection),
+                              ],
+                            )
+                          else ...[
+                            formSection,
+                            const SizedBox(height: 16),
+                            imageSection,
+                          ],
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: _saving || _loadingExistingImages ? null : _save,
+                              child: _saving
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Text(_isEditMode ? '保存修改' : '保存点位'),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-          );
-        },
-      ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -255,7 +358,6 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
           subtitle: '先确定特工和点位标题。带 * 的字段为必填项。',
           child: Column(
             children: [
-              // 特工分组 Chip 选择器
               if (_submitted && _selectedAgentId == null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -264,34 +366,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                     style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                   ),
                 ),
-              ...() {
-                final grouped = <String, List<dynamic>>{};
-                for (final a in provider.agents) {
-                  grouped.putIfAbsent(a.role, () => []).add(a);
-                }
-                return grouped.entries.map((entry) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6, top: 4),
-                      child: Text(entry.key,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        )),
-                    ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: entry.value.map<Widget>((a) => ChoiceChip(
-                        label: Text(a.name),
-                        selected: _selectedAgentId == a.id,
-                        onSelected: (_) => setState(() => _selectedAgentId = a.id),
-                      )).toList(),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ));
-              }(),
+              ..._buildAgentRoleGroups(context, provider),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _titleController,
@@ -299,8 +374,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                   labelText: '标题 *',
                   hintText: '例如：A包烟雾弹点位',
                 ),
-                validator: (val) =>
-                    val == null || val.trim().isEmpty ? '请输入标题' : null,
+                validator: (val) => val == null || val.trim().isEmpty ? '请输入标题' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -373,14 +447,58 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
     );
   }
 
+  List<Widget> _buildAgentRoleGroups(
+    BuildContext context,
+    LineupProvider provider,
+  ) {
+    final grouped = <String, List<dynamic>>{};
+    for (final agent in provider.agents) {
+      grouped.putIfAbsent(agent.role, () => []).add(agent);
+    }
+
+    return grouped.entries
+        .map(
+          (entry) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6, top: 4),
+                child: Text(
+                  entry.key,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: entry.value
+                    .map<Widget>(
+                      (agent) => ChoiceChip(
+                        label: Text(agent.name),
+                        selected: _selectedAgentId == agent.id,
+                        onSelected: (_) =>
+                            setState(() => _selectedAgentId = agent.id),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        )
+        .toList();
+  }
+
   Widget _buildImageSection(BuildContext context) {
     final theme = Theme.of(context);
-    final showImageError = _submitted && _selectedImages.isEmpty;
+    final showImageError = _submitted && _imageItems.isEmpty;
 
     return _buildSectionCard(
       context: context,
       title: '图片信息',
-      subtitle: '至少添加 1 张图片，建议按实际操作顺序上传。',
+      subtitle: _isEditMode ? '可保留旧图、删除旧图，也可继续追加新图片。' : '至少添加 1 张图片，建议按实际操作顺序上传。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -393,7 +511,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  '已添加 ${_selectedImages.length} 张',
+                  '已添加 ${_imageItems.length} 张',
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w700,
@@ -414,7 +532,21 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildImageGrid(showImageError),
+          if (_loadingExistingImages)
+            Container(
+              height: 180,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                ),
+              ),
+              child: const CircularProgressIndicator(),
+            )
+          else
+            _buildImageGrid(showImageError),
           if (showImageError) ...[
             const SizedBox(height: 8),
             Text(
@@ -431,13 +563,13 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
             runSpacing: 12,
             children: [
               ElevatedButton.icon(
-                onPressed: () => _pickImage(ImageSource.gallery),
+                onPressed: _loadingExistingImages ? null : () => _pickImage(ImageSource.gallery),
                 icon: const Icon(Icons.photo_library_rounded),
                 label: const Text('从相册选择'),
               ),
               if (!kIsWeb && (Platform.isAndroid || Platform.isIOS))
                 ElevatedButton.icon(
-                  onPressed: () => _pickImage(ImageSource.camera),
+                  onPressed: _loadingExistingImages ? null : () => _pickImage(ImageSource.camera),
                   icon: const Icon(Icons.camera_alt_rounded),
                   label: const Text('拍照'),
                 ),
@@ -486,7 +618,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   Widget _buildImageGrid(bool showError) {
     final theme = Theme.of(context);
 
-    if (_selectedImages.isEmpty) {
+    if (_imageItems.isEmpty) {
       return Container(
         height: 180,
         decoration: BoxDecoration(
@@ -532,8 +664,9 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
       height: 220,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: _selectedImages.length,
+        itemCount: _imageItems.length,
         itemBuilder: (context, index) {
+          final item = _imageItems[index];
           return Container(
             width: 180,
             margin: const EdgeInsets.only(right: 12),
@@ -542,18 +675,24 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: Image.file(
-                    _selectedImages[index],
+                    item.file,
                     width: 180,
                     height: 220,
                     fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 180,
+                      height: 220,
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.broken_image_outlined),
+                    ),
                   ),
                 ),
                 Positioned(
                   top: 10,
                   left: 10,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.55),
                       borderRadius: BorderRadius.circular(999),
@@ -567,6 +706,26 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                     ),
                   ),
                 ),
+                if (item.isExisting)
+                  Positioned(
+                    left: 10,
+                    bottom: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        '已保存',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   top: 10,
                   right: 10,
@@ -589,6 +748,37 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _EditableImageItem {
+  final String? imageId;
+  final File file;
+  final bool isExisting;
+
+  const _EditableImageItem({
+    required this.imageId,
+    required this.file,
+    required this.isExisting,
+  });
+
+  factory _EditableImageItem.existing({
+    required String imageId,
+    required String imagePath,
+  }) {
+    return _EditableImageItem(
+      imageId: imageId,
+      file: File(imagePath),
+      isExisting: true,
+    );
+  }
+
+  factory _EditableImageItem.newFile(File file) {
+    return _EditableImageItem(
+      imageId: null,
+      file: file,
+      isExisting: false,
     );
   }
 }

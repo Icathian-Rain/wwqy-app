@@ -335,6 +335,13 @@ class _LineupListScreenState extends State<LineupListScreen> {
       provider.selectedSide,
       provider.selectedSite,
     ].where((e) => e != null).length;
+    final selectedAgentName = provider.selectedAgentId == null
+        ? '全部'
+        : provider.agents
+                .where((agent) => agent.id == provider.selectedAgentId)
+                .map((agent) => agent.name)
+                .firstOrNull ??
+            '全部';
 
     return Card(
       child: Column(
@@ -386,28 +393,15 @@ class _LineupListScreenState extends State<LineupListScreen> {
                 children: [
                   Text('特工', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _filterChip(context, label: '全部', selected: provider.selectedAgentId == null,
-                          onTap: () { provider.setAgentFilter(null); _loadLineups(); }),
-                        ...provider.agents.map((a) => _filterChip(
-                          context,
-                          label: a.name,
-                          selected: provider.selectedAgentId == a.id,
-                          onTap: () {
-                            provider.setAgentFilter(provider.selectedAgentId == a.id ? null : a.id);
-                            _loadLineups();
-                          },
-                        )),
-                      ],
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: () => _showAgentFilterDialog(context, provider),
+                    icon: const Icon(Icons.person_search_outlined),
+                    label: Text('选择特工：$selectedAgentName'),
                   ),
                   const SizedBox(height: 12),
                   Text('攻防', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 8),
-                  Row(children: [
+                  Wrap(children: [
                     _filterChip(context, label: '全部', selected: provider.selectedSide == null,
                       onTap: () { provider.setSideFilter(null); _loadLineups(); }),
                     _filterChip(context, label: '进攻', selected: provider.selectedSide == 'attack',
@@ -418,7 +412,7 @@ class _LineupListScreenState extends State<LineupListScreen> {
                   const SizedBox(height: 12),
                   Text('包点', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 8),
-                  Row(children: [
+                  Wrap(children: [
                     _filterChip(context, label: '全部', selected: provider.selectedSite == null,
                       onTap: () { provider.setSiteFilter(null); _loadLineups(); }),
                     for (final site in ['A', 'B', 'C'])
@@ -439,6 +433,122 @@ class _LineupListScreenState extends State<LineupListScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Future<void> _showAgentFilterDialog(
+    BuildContext context,
+    LineupProvider provider,
+  ) async {
+    final groupedAgents = <String, List<dynamic>>{};
+    for (final agent in provider.agents) {
+      groupedAgents.putIfAbsent(agent.role, () => []).add(agent);
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final mediaQuery = MediaQuery.of(dialogContext);
+        final dialogWidth = mediaQuery.size.width * 0.92;
+        final dialogHeight = mediaQuery.size.height * 0.78;
+
+        return Dialog(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: dialogWidth > 520 ? 520 : dialogWidth,
+              maxHeight: dialogHeight,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '选择特工',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _filterChip(
+                                context,
+                                label: '全部',
+                                selected: provider.selectedAgentId == null,
+                                onTap: () {
+                                  provider.setAgentFilter(null);
+                                  Navigator.pop(dialogContext);
+                                  _loadLineups();
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ...groupedAgents.entries.map(
+                            (entry) => Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    entry.key,
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      for (final agent in entry.value)
+                                        _filterChip(
+                                          context,
+                                          label: agent.name,
+                                          selected: provider.selectedAgentId == agent.id,
+                                          onTap: () {
+                                            provider.setAgentFilter(
+                                              provider.selectedAgentId == agent.id ? null : agent.id,
+                                            );
+                                            Navigator.pop(dialogContext);
+                                            _loadLineups();
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
