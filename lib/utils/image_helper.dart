@@ -11,10 +11,10 @@ class ImageHelper {
   static Future<File?> pickImage({ImageSource source = ImageSource.gallery}) async {
     final xFile = await _picker.pickImage(source: source, imageQuality: 85);
     if (xFile == null) return null;
-    return _saveToAppDir(File(xFile.path));
+    return copyImageToAppDir(File(xFile.path));
   }
 
-  static Future<File> _saveToAppDir(File sourceFile) async {
+  static Future<File> copyImageToAppDir(File sourceFile) async {
     final appDir = await getApplicationDocumentsDirectory();
     final imagesDir = Directory(join(appDir.path, 'lineup_images'));
     if (!await imagesDir.exists()) {

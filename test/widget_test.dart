@@ -1,12 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:wwqy_app/app.dart';
+import 'package:wwqy_app/data/database_helper.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+
+  setUp(() {
+    DatabaseHelper.resetForTest();
+  });
 
   testWidgets('App should render', (WidgetTester tester) async {
     await tester.pumpWidget(const WwqyApp());

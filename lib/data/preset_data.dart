@@ -13,7 +13,7 @@ class PresetData {
     GameMap(id: 'bind', gameId: valorantId, name: '源工重镇'),
     GameMap(id: 'split', gameId: valorantId, name: '霓虹町'),
     GameMap(id: 'ascent', gameId: valorantId, name: '亚海悬城'),
-    GameMap(id: 'icebox', gameId: valorantId, name: '森寒东港'),
+    GameMap(id: 'icebox', gameId: valorantId, name: '森寒冬港'),
     GameMap(id: 'breeze', gameId: valorantId, name: '微风岛屿'),
     GameMap(id: 'fracture', gameId: valorantId, name: '裂变峡谷'),
     GameMap(id: 'haven', gameId: valorantId, name: '隐世修所'),

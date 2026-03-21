@@ -70,9 +70,35 @@ class LineupRepository {
     return results.map((m) => Lineup.fromMap(m)).toList();
   }
 
+  Future<List<Lineup>> getLineupsForGame(String gameId) async {
+    final db = await _dbHelper.database;
+    final results = await db.query(
+      'lineups',
+      where: 'game_id = ?',
+      whereArgs: [gameId],
+      orderBy: 'created_at DESC',
+    );
+    return results.map((m) => Lineup.fromMap(m)).toList();
+  }
+
   Future<void> insertLineup(Lineup lineup) async {
     final db = await _dbHelper.database;
     await db.insert('lineups', lineup.toMap());
+  }
+
+  Future<void> insertLineupsWithImages(
+    List<Lineup> lineups,
+    List<LineupImage> images,
+  ) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      for (final lineup in lineups) {
+        await txn.insert('lineups', lineup.toMap());
+      }
+      for (final image in images) {
+        await txn.insert('lineup_images', image.toMap());
+      }
+    });
   }
 
   Future<void> updateLineup(Lineup lineup, List<LineupImage> images) async {
@@ -99,7 +125,6 @@ class LineupRepository {
 
   Future<void> deleteLineup(String lineupId) async {
     final db = await _dbHelper.database;
-    // Delete associated images first
     await db.delete('lineup_images', where: 'lineup_id = ?', whereArgs: [lineupId]);
     await db.delete('lineups', where: 'id = ?', whereArgs: [lineupId]);
   }
@@ -121,7 +146,6 @@ class LineupRepository {
     await db.insert('lineup_images', image.toMap());
   }
 
-  /// 返回指定点位列表中每个点位的第一张图路径，key 为 lineup_id
   Future<Map<String, String>> getFirstImageByLineupIds(List<String> lineupIds) async {
     if (lineupIds.isEmpty) return {};
     final db = await _dbHelper.database;
@@ -133,7 +157,6 @@ class LineupRepository {
     return {for (final r in results) r['lineup_id'] as String: r['image_path'] as String};
   }
 
-  /// 返回指定游戏下每张地图的点位数量，key 为 map_id
   Future<Map<String, int>> getLineupCountByMap(String gameId) async {
     final db = await _dbHelper.database;
     final results = await db.rawQuery(

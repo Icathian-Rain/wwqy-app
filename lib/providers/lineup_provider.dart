@@ -7,10 +7,13 @@ import '../models/agent.dart';
 import '../models/lineup.dart';
 import '../models/lineup_image.dart';
 import '../data/lineup_repository.dart';
+import '../services/lineup_transfer_service.dart';
 import '../utils/image_helper.dart';
 
 class LineupProvider extends ChangeNotifier {
   final LineupRepository _repository = LineupRepository();
+  late final LineupTransferService _transferService =
+      LineupTransferService(repository: _repository);
 
   List<Game> _games = [];
   List<GameMap> _maps = [];
@@ -129,6 +132,36 @@ class LineupProvider extends ChangeNotifier {
       }
     } catch (e) {
       throw Exception('更新点位失败：$e');
+    }
+  }
+
+  Future<LineupExportResult> exportLineupsForGame(
+    String gameId,
+    String gameName,
+  ) async {
+    try {
+      return await _transferService.exportGameBundle(
+        gameId: gameId,
+        gameName: gameName,
+      );
+    } catch (e) {
+      throw Exception('导出点位失败：$e');
+    }
+  }
+
+  Future<void> shareExportedBundle(String zipPath) async {
+    try {
+      await _transferService.shareExportedBundle(zipPath);
+    } catch (e) {
+      throw Exception('分享导出文件失败：$e');
+    }
+  }
+
+  Future<LineupImportResult> importLineupsFromZip(String zipPath) async {
+    try {
+      return await _transferService.importBundleFromZip(zipPath: zipPath);
+    } catch (e) {
+      throw Exception('导入点位失败：$e');
     }
   }
 

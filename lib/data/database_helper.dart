@@ -8,6 +8,21 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   Database? _database;
+  static bool _useInMemory = false;
+
+  /// 仅供测试使用：重置单例并切换到内存数据库，彻底隔离测试间状态。
+  static void resetForTest() {
+    _instance._database?.close();
+    _instance._database = null;
+    _useInMemory = true;
+  }
+
+  /// 仅供测试使用：恢复使用真实文件数据库。
+  static void restoreAfterTest() {
+    _instance._database?.close();
+    _instance._database = null;
+    _useInMemory = false;
+  }
 
   Future<Database> get database async {
     _database ??= await _initDatabase();
@@ -15,9 +30,15 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'wwqy_app.db');
-
+    if (_useInMemory) {
+      return await openDatabase(
+        inMemoryDatabasePath,
+        version: 1,
+        onCreate: _onCreate,
+        singleInstance: false,
+      );
+    }
+    final path = join(await getDatabasesPath(), 'wwqy_app.db');
     return await openDatabase(
       path,
       version: 1,
