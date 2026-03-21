@@ -1,0 +1,65 @@
+{
+  "format": "wwqy.lineup-bundle",
+  "version": 1,
+  "exportedAt": "2026-03-21T10:30:00.000Z",
+  "lineups": [
+    {
+      "id": "source-lineup-id-1",
+      "gameId": "valorant",
+      "mapId": "bind",
+      "agentId": "brimstone",
+      "side": "attack",
+      "site": "A",
+      "title": "A 包默认烟",
+      "description": "站位贴左墙，瞄准屋檐角后投掷。",
+      "createdAt": "2026-03-21T09:00:00.000Z",
+      "images": [
+        {
+          "imageId": "bundle-image-1",
+          "sortOrder": 0
+        },
+        {
+          "imageId": "bundle-image-2",
+          "sortOrder": 1
+        }
+      ]
+    },
+    {
+      "id": "source-lineup-id-2",
+      "gameId": "valorant",
+      "mapId": "bind",
+      "agentId": "viper",
+      "side": "defense",
+      "site": "B",
+      "title": "B 点默认毒墙",
+      "description": "开局贴墙站位，准星对齐屋檐中线释放。",
+      "createdAt": "2026-03-21T09:05:00.000Z",
+      "images": [
+        {
+          "imageId": "bundle-image-3",
+          "sortOrder": 0
+        }
+      ]
+    }
+  ],
+  "images": [
+    {
+      "id": "bundle-image-1",
+      "path": "images/bundle-image-1.jpg",
+      "fileName": "bundle-image-1.jpg",
+      "sizeBytes": 123456
+    },
+    {
+      "id": "bundle-image-2",
+      "path": "images/bundle-image-2.png",
+      "fileName": "bundle-image-2.png",
+      "sizeBytes": 234567
+    },
+    {
+      "id": "bundle-image-3",
+      "path": "images/bundle-image-3.jpg",
+      "fileName": "bundle-image-3.jpg",
+      "sizeBytes": 198765
+    }
+  ]
+}
