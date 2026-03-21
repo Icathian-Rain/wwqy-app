@@ -44,6 +44,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   bool _saving = false;
   bool _submitted = false;
   bool _saved = false;
+  int _previewImageIndex = 0;
 
   bool get _isEditMode => widget.initialLineup != null;
 
@@ -87,9 +88,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   Future<void> _loadExistingImages() async {
     setState(() => _loadingExistingImages = true);
     try {
-      final images = await context
-          .read<LineupProvider>()
-          .getLineupImages(widget.initialLineup!.id);
+      final images = await context.read<LineupProvider>().getLineupImages(widget.initialLineup!.id);
       if (!mounted) return;
       setState(() {
         _imageItems
@@ -99,6 +98,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                 imagePath: image.imagePath,
               )));
         _initialImagePaths = images.map((image) => image.imagePath).toList();
+        _previewImageIndex = 0;
         _loadingExistingImages = false;
       });
     } catch (e) {
@@ -116,6 +116,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
     setState(() {
       _imageItems.add(_EditableImageItem.newFile(file));
       _pendingNewImagePaths.add(file.path);
+      _previewImageIndex = _imageItems.length - 1;
     });
   }
 
@@ -128,11 +129,36 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
       } else {
         _pendingNewImagePaths.remove(item.file.path);
       }
+      if (_previewImageIndex >= _imageItems.length) {
+        _previewImageIndex = _imageItems.isEmpty ? 0 : _imageItems.length - 1;
+      }
     });
 
     if (!item.isExisting) {
       await ImageHelper.deleteImage(item.file.path);
     }
+  }
+
+  void _setPreviewImage(int index) {
+    setState(() => _previewImageIndex = index);
+  }
+
+  void _moveImageLeft(int index) {
+    if (index == 0) return;
+    setState(() {
+      final item = _imageItems.removeAt(index);
+      _imageItems.insert(index - 1, item);
+      _previewImageIndex = index - 1;
+    });
+  }
+
+  void _moveImageRight(int index) {
+    if (index >= _imageItems.length - 1) return;
+    setState(() {
+      final item = _imageItems.removeAt(index);
+      _imageItems.insert(index + 1, item);
+      _previewImageIndex = index + 1;
+    });
   }
 
   bool _hasUnsavedChanges() {
@@ -189,12 +215,14 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
       final images = <LineupImage>[];
       for (var i = 0; i < _imageItems.length; i++) {
         final item = _imageItems[i];
-        images.add(LineupImage(
-          id: item.imageId ?? _uuid.v4(),
-          lineupId: lineupId,
-          imagePath: item.file.path,
-          sortOrder: i,
-        ));
+        images.add(
+          LineupImage(
+            id: item.imageId ?? _uuid.v4(),
+            lineupId: lineupId,
+            imagePath: item.file.path,
+            sortOrder: i,
+          ),
+        );
       }
 
       final provider = context.read<LineupProvider>();
@@ -226,9 +254,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final addTitle = widget.mapName == null || widget.mapName!.isEmpty
-        ? '添加点位'
-        : '添加点位 · ${widget.mapName}';
+    final addTitle = widget.mapName == null || widget.mapName!.isEmpty ? '添加点位' : '添加点位 · ${widget.mapName}';
 
     return PopScope(
       canPop: false,
@@ -265,9 +291,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
 
                 return Form(
                   key: _formKey,
-                  autovalidateMode: _submitted
-                      ? AutovalidateMode.onUserInteraction
-                      : AutovalidateMode.disabled,
+                  autovalidateMode: _submitted ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
                   child: Align(
                     alignment: Alignment.topCenter,
                     child: ConstrainedBox(
@@ -296,7 +320,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                                 const SizedBox(height: 8),
                                 Text(
                                   _isEditMode
-                                      ? '可修改基础信息并增删图片，保存后会直接更新当前点位。'
+                                      ? '可修改基础信息并增删图片，支持调整图片顺序，第一张图会作为封面图。'
                                       : '请先填写基础信息，再补充图片和使用说明。图片会复制到应用本地目录中保存。',
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
@@ -329,9 +353,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                                   ? const SizedBox(
                                       width: 24,
                                       height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
+                                      child: CircularProgressIndicator(strokeWidth: 2),
                                     )
                                   : Text(_isEditMode ? '保存修改' : '保存点位'),
                             ),
@@ -399,9 +421,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
             children: [
               Text(
                 '阵营',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -423,9 +443,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
               const SizedBox(height: 20),
               Text(
                 '包点',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -447,10 +465,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
     );
   }
 
-  List<Widget> _buildAgentRoleGroups(
-    BuildContext context,
-    LineupProvider provider,
-  ) {
+  List<Widget> _buildAgentRoleGroups(BuildContext context, LineupProvider provider) {
     final grouped = <String, List<dynamic>>{};
     for (final agent in provider.agents) {
       grouped.putIfAbsent(agent.role, () => []).add(agent);
@@ -478,8 +493,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                       (agent) => ChoiceChip(
                         label: Text(agent.name),
                         selected: _selectedAgentId == agent.id,
-                        onSelected: (_) =>
-                            setState(() => _selectedAgentId = agent.id),
+                        onSelected: (_) => setState(() => _selectedAgentId = agent.id),
                       ),
                     )
                     .toList(),
@@ -498,7 +512,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
     return _buildSectionCard(
       context: context,
       title: '图片信息',
-      subtitle: _isEditMode ? '可保留旧图、删除旧图，也可继续追加新图片。' : '至少添加 1 张图片，建议按实际操作顺序上传。',
+      subtitle: _isEditMode ? '可保留旧图、删除旧图，也可继续追加新图片，并可调整顺序。' : '至少添加 1 张图片，建议按实际操作顺序上传。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -624,9 +638,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHigh,
           border: Border.all(
-            color: showError
-                ? theme.colorScheme.error
-                : theme.colorScheme.outlineVariant.withOpacity(0.5),
+            color: showError ? theme.colorScheme.error : theme.colorScheme.outlineVariant.withOpacity(0.5),
           ),
           borderRadius: BorderRadius.circular(18),
         ),
@@ -642,9 +654,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
               const SizedBox(height: 12),
               Text(
                 '尚未添加图片',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
               Text(
@@ -660,28 +670,22 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
       );
     }
 
-    return SizedBox(
-      height: 220,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _imageItems.length,
-        itemBuilder: (context, index) {
-          final item = _imageItems[index];
-          return Container(
-            width: 180,
-            margin: const EdgeInsets.only(right: 12),
+    final previewItem = _imageItems[_previewImageIndex];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AspectRatio(
+          aspectRatio: 16 / 10,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
             child: Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
+                Positioned.fill(
                   child: Image.file(
-                    item.file,
-                    width: 180,
-                    height: 220,
+                    previewItem.file,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
-                      width: 180,
-                      height: 220,
                       color: theme.colorScheme.surfaceContainerHighest,
                       alignment: Alignment.center,
                       child: const Icon(Icons.broken_image_outlined),
@@ -689,8 +693,8 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                   ),
                 ),
                 Positioned(
-                  top: 10,
-                  left: 10,
+                  left: 12,
+                  top: 12,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
@@ -698,7 +702,7 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '第 ${index + 1} 张',
+                      _previewImageIndex == 0 ? '封面图 / 第 1 张' : '第 ${_previewImageIndex + 1} 张',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -706,48 +710,136 @@ class _AddLineupScreenState extends State<AddLineupScreen> {
                     ),
                   ),
                 ),
-                if (item.isExisting)
-                  Positioned(
-                    left: 10,
-                    bottom: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        '已保存',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
                 Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Material(
-                    color: Colors.black.withOpacity(0.55),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      onPressed: () => _removeImage(index),
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      iconSize: 18,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
+                  right: 12,
+                  top: 12,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: _previewImageIndex > 0 ? () => _moveImageLeft(_previewImageIndex) : null,
+                        icon: const Icon(Icons.arrow_back_rounded),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        onPressed: _previewImageIndex < _imageItems.length - 1
+                            ? () => _moveImageRight(_previewImageIndex)
+                            : null,
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '点击缩略图切换预览，可用左右按钮调整顺序。第一张图会作为列表封面。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 110,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _imageItems.length,
+            itemBuilder: (context, index) {
+              final item = _imageItems[index];
+              final selected = index == _previewImageIndex;
+              return GestureDetector(
+                onTap: () => _setPreviewImage(index),
+                child: Container(
+                  width: 110,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outlineVariant.withOpacity(0.5),
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: Image.file(
+                            item.file,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.broken_image_outlined),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.55),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${index + 1}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (index == 0)
+                        Positioned(
+                          left: 8,
+                          bottom: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.55),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              '封面',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Material(
+                          color: Colors.black.withOpacity(0.55),
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            onPressed: () => _removeImage(index),
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            iconSize: 18,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

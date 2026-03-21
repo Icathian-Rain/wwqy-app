@@ -24,7 +24,6 @@ class LineupProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
 
-  // Filter state
   String? _selectedAgentId;
   String? _selectedSide;
   String? _selectedSite;
@@ -73,7 +72,7 @@ class LineupProvider extends ChangeNotifier {
         site: _selectedSite,
       );
       _lineupFirstImages = await _repository.getFirstImageByLineupIds(
-        _lineups.map((l) => l.id).toList(),
+        _lineups.map((lineup) => lineup.id).toList(),
       );
     } catch (e) {
       _error = '加载点位失败：$e';
@@ -106,7 +105,7 @@ class LineupProvider extends ChangeNotifier {
   }
 
   Future<Agent?> getAgentById(String agentId) async {
-    return await _repository.getAgentById(agentId);
+    return _repository.getAgentById(agentId);
   }
 
   Future<void> addLineup(Lineup lineup, List<LineupImage> images) async {
@@ -157,9 +156,23 @@ class LineupProvider extends ChangeNotifier {
     }
   }
 
-  Future<LineupImportResult> importLineupsFromZip(String zipPath) async {
+  Future<LineupImportPreview> previewImportFromZip(String zipPath) async {
     try {
-      return await _transferService.importBundleFromZip(zipPath: zipPath);
+      return await _transferService.previewBundleFromZip(zipPath: zipPath);
+    } catch (e) {
+      throw Exception('预检导入包失败：$e');
+    }
+  }
+
+  Future<LineupImportResult> importLineupsFromZip(
+    String zipPath, {
+    bool skipDuplicates = false,
+  }) async {
+    try {
+      return await _transferService.importBundleFromZip(
+        zipPath: zipPath,
+        skipDuplicates: skipDuplicates,
+      );
     } catch (e) {
       throw Exception('导入点位失败：$e');
     }
@@ -169,8 +182,8 @@ class LineupProvider extends ChangeNotifier {
     try {
       final images = await _repository.getLineupImages(lineupId);
       await _repository.deleteLineup(lineupId);
-      for (final img in images) {
-        final file = File(img.imagePath);
+      for (final image in images) {
+        final file = File(image.imagePath);
         if (await file.exists()) {
           await file.delete();
         }
@@ -181,6 +194,6 @@ class LineupProvider extends ChangeNotifier {
   }
 
   Future<List<LineupImage>> getLineupImages(String lineupId) async {
-    return await _repository.getLineupImages(lineupId);
+    return _repository.getLineupImages(lineupId);
   }
 }

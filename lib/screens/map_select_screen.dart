@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/lineup_provider.dart';
+import '../services/lineup_transfer_service.dart';
 import 'lineup_list_screen.dart';
 
 class MapSelectScreen extends StatefulWidget {
@@ -62,18 +63,43 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
       allowedExtensions: const ['zip'],
     );
     final zipPath = picked?.files.single.path;
-    if (zipPath == null) return;
-    if (!mounted) return;
+    if (zipPath == null || !mounted) return;
 
     final provider = context.read<LineupProvider>();
     setState(() => _processing = true);
+
+    LineupImportPreview? preview;
     try {
-      final result = await provider.importLineupsFromZip(zipPath);
+      preview = await provider.previewImportFromZip(zipPath);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _processing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _processing = false);
+
+    final skipDuplicates = await _showImportPreviewDialog(preview);
+    if (skipDuplicates == null) return;
+
+    setState(() => _processing = true);
+    try {
+      final result = await provider.importLineupsFromZip(
+        zipPath,
+        skipDuplicates: skipDuplicates,
+      );
       await provider.loadMaps(widget.gameId);
       if (!mounted) return;
+      final skippedText = result.skippedLineupCount > 0
+          ? '，跳过 ${result.skippedLineupCount} 条重复点位'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('导入成功：${result.lineupCount} 条点位，${result.imageCount} 张图片'),
+          content: Text('导入成功：${result.lineupCount} 条点位，${result.imageCount} 张图片$skippedText'),
         ),
       );
     } catch (e) {
@@ -86,6 +112,85 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
         setState(() => _processing = false);
       }
     }
+  }
+
+  Future<bool?> _showImportPreviewDialog(LineupImportPreview preview) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return AlertDialog(
+          title: const Text('导入预检结果'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('点位：${preview.lineupCount} 条'),
+                  Text('图片：${preview.imageCount} 张'),
+                  Text('涉及地图：${preview.mapNames.join('、')}'),
+                  if (preview.duplicateCount > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '检测到 ${preview.duplicateCount} 条可能重复点位',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  if (preview.warnings.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text('提示', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    ...preview.warnings.map((warning) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text('• $warning'),
+                        )),
+                  ],
+                  if (preview.blockingIssues.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '以下问题会阻止导入',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ...preview.blockingIssues.map((issue) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '• $issue',
+                            style: TextStyle(color: theme.colorScheme.error),
+                          ),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('取消'),
+            ),
+            if (preview.canImport)
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('跳过重复后导入'),
+              ),
+            if (preview.canImport)
+              FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('继续追加导入'),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -159,8 +264,7 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                               color: theme.colorScheme.surfaceContainerHigh,
                               borderRadius: BorderRadius.circular(24),
                               border: Border.all(
-                                color:
-                                    theme.colorScheme.outlineVariant.withOpacity(0.4),
+                                color: theme.colorScheme.outlineVariant.withOpacity(0.4),
                               ),
                             ),
                             child: Column(
@@ -260,8 +364,7 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                                           width: 52,
                                           height: 52,
                                           decoration: BoxDecoration(
-                                            color: theme.colorScheme.primary
-                                                .withOpacity(0.14),
+                                            color: theme.colorScheme.primary.withOpacity(0.14),
                                             borderRadius: BorderRadius.circular(16),
                                           ),
                                           child: Icon(
@@ -272,16 +375,14 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                                         const SizedBox(height: 12),
                                         Text(
                                           map.name,
-                                          style:
-                                              theme.textTheme.titleLarge?.copyWith(
+                                          style: theme.textTheme.titleLarge?.copyWith(
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
                                           '${counts[map.id] ?? 0} 条点位',
-                                          style:
-                                              theme.textTheme.bodyMedium?.copyWith(
+                                          style: theme.textTheme.bodyMedium?.copyWith(
                                             color: theme.colorScheme.onSurfaceVariant,
                                           ),
                                         ),
@@ -290,8 +391,7 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                                           children: [
                                             Text(
                                               '查看点位',
-                                              style: theme.textTheme.labelLarge
-                                                  ?.copyWith(
+                                              style: theme.textTheme.labelLarge?.copyWith(
                                                 color: theme.colorScheme.primary,
                                                 fontWeight: FontWeight.w700,
                                               ),

@@ -25,7 +25,7 @@ class LineupListScreen extends StatefulWidget {
 }
 
 class _LineupListScreenState extends State<LineupListScreen> {
-  bool _filterExpanded = false;
+  bool _filterExpanded = true;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -37,7 +37,6 @@ class _LineupListScreenState extends State<LineupListScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<LineupProvider>();
-      provider.clearFilters();
       provider.loadAgents(widget.gameId);
       _loadLineups();
     });
@@ -69,7 +68,7 @@ class _LineupListScreenState extends State<LineupListScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: '搜索点位标题…',
+                hintText: '搜索标题或说明…',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -95,11 +94,19 @@ class _LineupListScreenState extends State<LineupListScreen> {
           final agentNameById = {
             for (final agent in provider.agents) agent.id: agent.name,
           };
-          final filtered = _searchQuery.isEmpty
-              ? provider.lineups
-              : provider.lineups
-                  .where((l) => l.title.toLowerCase().contains(_searchQuery))
-                  .toList();
+          final filtered = provider.lineups.where((lineup) {
+            if (_searchQuery.isEmpty) return true;
+            final title = lineup.title.toLowerCase();
+            final description = lineup.description.toLowerCase();
+            final agentName = (agentNameById[lineup.agentId] ?? '').toLowerCase();
+            final side = lineup.side == 'attack' ? '进攻' : '防守';
+            final site = '${lineup.site}点';
+            return title.contains(_searchQuery) ||
+                description.contains(_searchQuery) ||
+                agentName.contains(_searchQuery) ||
+                side.contains(_searchQuery) ||
+                site.contains(_searchQuery);
+          }).toList();
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -123,7 +130,7 @@ class _LineupListScreenState extends State<LineupListScreen> {
                             children: [
                               SizedBox(
                                 width: 320,
-                                child: _buildFilterPanel(context, provider),
+                                child: _buildFilterPanel(context, provider, filtered.length),
                               ),
                               const SizedBox(width: 16),
                               Expanded(child: content),
@@ -131,7 +138,7 @@ class _LineupListScreenState extends State<LineupListScreen> {
                           )
                         : Column(
                             children: [
-                              _buildFilterPanel(context, provider),
+                              _buildFilterPanel(context, provider, filtered.length),
                               const SizedBox(height: 16),
                               Expanded(child: content),
                             ],
@@ -172,31 +179,45 @@ class _LineupListScreenState extends State<LineupListScreen> {
     final theme = Theme.of(context);
 
     if (provider.loading) {
-      return const Card(child: Center(child: Padding(
-        padding: EdgeInsets.all(48),
-        child: CircularProgressIndicator(),
-      )));
+      return const Card(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(48),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
     }
 
     if (provider.error != null) {
-      return Card(child: Center(child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.error_outline, size: 44, color: theme.colorScheme.error),
-          const SizedBox(height: 16),
-          Text(provider.error!, textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)),
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: _loadLineups,
-            icon: const Icon(Icons.refresh),
-            label: const Text('重试'),
+      return Card(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline, size: 44, color: theme.colorScheme.error),
+                const SizedBox(height: 16),
+                Text(
+                  provider.error!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error),
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: _loadLineups,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
           ),
-        ]),
-      )));
+        ),
+      );
     }
 
-    if (filtered.isEmpty) {
+    if (provider.lineups.isEmpty) {
       return Card(
         child: Center(
           child: Padding(
@@ -211,7 +232,7 @@ class _LineupListScreenState extends State<LineupListScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  '暂无点位记录',
+                  '当前地图暂无点位记录',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -223,6 +244,52 @@ class _LineupListScreenState extends State<LineupListScreen> {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (filtered.isEmpty) {
+      return Card(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.manage_search_rounded,
+                  size: 44,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '没有符合条件的点位',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '请尝试调整搜索词或清空筛选条件。',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    _searchController.clear();
+                    final provider = context.read<LineupProvider>();
+                    provider.clearFilters();
+                    _loadLineups();
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('清空搜索与筛选'),
                 ),
               ],
             ),
@@ -263,7 +330,6 @@ class _LineupListScreenState extends State<LineupListScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 缩略图
                   if (thumbPath != null)
                     ClipRRect(
                       borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
@@ -284,10 +350,12 @@ class _LineupListScreenState extends State<LineupListScreen> {
                         color: theme.colorScheme.surfaceContainerHighest,
                         borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
                       ),
-                      child: Icon(Icons.image_not_supported_outlined,
-                          color: theme.colorScheme.onSurfaceVariant, size: 28),
+                      child: Icon(
+                        Icons.image_not_supported_outlined,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        size: 28,
+                      ),
                     ),
-                  // 文字信息
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(14),
@@ -315,6 +383,18 @@ class _LineupListScreenState extends State<LineupListScreen> {
                               Chip(label: Text('${lineup.site}点')),
                             ],
                           ),
+                          if (lineup.description.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              lineup.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -328,13 +408,18 @@ class _LineupListScreenState extends State<LineupListScreen> {
     );
   }
 
-  Widget _buildFilterPanel(BuildContext context, LineupProvider provider) {
+  Widget _buildFilterPanel(
+    BuildContext context,
+    LineupProvider provider,
+    int filteredCount,
+  ) {
     final theme = Theme.of(context);
     final activeFilters = [
       provider.selectedAgentId,
       provider.selectedSide,
       provider.selectedSite,
-    ].where((e) => e != null).length;
+      _searchQuery.isEmpty ? null : _searchQuery,
+    ].where((element) => element != null).length;
     final selectedAgentName = provider.selectedAgentId == null
         ? '全部'
         : provider.agents
@@ -391,6 +476,21 @@ class _LineupListScreenState extends State<LineupListScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '当前结果 $filteredCount 条',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text('特工', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
@@ -422,9 +522,13 @@ class _LineupListScreenState extends State<LineupListScreen> {
                   if (activeFilters > 0) ...[
                     const SizedBox(height: 12),
                     TextButton.icon(
-                      onPressed: () { provider.clearFilters(); _loadLineups(); },
+                      onPressed: () {
+                        _searchController.clear();
+                        provider.clearFilters();
+                        _loadLineups();
+                      },
                       icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('清空筛选'),
+                      label: const Text('清空搜索与筛选'),
                     ),
                   ],
                 ],
@@ -552,7 +656,12 @@ class _LineupListScreenState extends State<LineupListScreen> {
     );
   }
 
-  Widget _filterChip(BuildContext context, {required String label, required bool selected, required VoidCallback onTap}) {
+  Widget _filterChip(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
