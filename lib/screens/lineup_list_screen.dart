@@ -108,45 +108,24 @@ class _LineupListScreenState extends State<LineupListScreen> {
                 site.contains(_searchQuery);
           }).toList();
 
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 1024;
-              final content = _buildLineupContent(
-                context,
-                provider,
-                agentNameById,
-                filtered,
-              );
-
-              return Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1280),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    child: isWide
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 320,
-                                child: _buildFilterPanel(context, provider, filtered.length),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(child: content),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              _buildFilterPanel(context, provider, filtered.length),
-                              const SizedBox(height: 16),
-                              Expanded(child: content),
-                            ],
-                          ),
+          return Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildFilterPanel(context, provider, filtered.length),
+                  const SizedBox(height: 16),
+                  _buildLineupContent(
+                    context,
+                    provider,
+                    agentNameById,
+                    filtered,
                   ),
-                ),
-              );
-            },
+                ],
+              ),
+            ),
           );
         },
       ),
@@ -299,111 +278,137 @@ class _LineupListScreenState extends State<LineupListScreen> {
     }
 
     return Card(
-      child: ListView.separated(
+      child: Padding(
         padding: const EdgeInsets.all(12),
-        itemCount: filtered.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          final lineup = filtered[index];
-          final agentName = agentNameById[lineup.agentId] ?? '未知特工';
-          final thumbPath = provider.lineupFirstImages[lineup.id];
-
-          return InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () async {
-              await Navigator.push(
+        child: Column(
+          children: [
+            for (var index = 0; index < filtered.length; index++) ...[
+              _buildLineupCard(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => LineupDetailScreen(lineup: lineup),
+                provider,
+                filtered[index],
+                agentNameById[filtered[index].agentId] ?? '未知特工',
+              ),
+              if (index < filtered.length - 1) const SizedBox(height: 10),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLineupCard(
+    BuildContext context,
+    LineupProvider provider,
+    dynamic lineup,
+    String agentName,
+  ) {
+    final theme = Theme.of(context);
+    final thumbPath = provider.lineupFirstImages[lineup.id];
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LineupDetailScreen(lineup: lineup),
+          ),
+        );
+        _loadLineups();
+      },
+      child: Ink(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withOpacity(0.35),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (thumbPath != null)
+              ClipRRect(
+                borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
+                child: Image.file(
+                  File(thumbPath),
+                  width: 90,
+                  height: 90,
+                  fit: BoxFit.cover,
+                  cacheWidth: 180,
+                  errorBuilder: (_, __, ___) => const SizedBox(width: 90, height: 90),
                 ),
-              );
-              _loadLineups();
-            },
-            child: Ink(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withOpacity(0.35),
+              )
+            else
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
+                ),
+                child: Icon(
+                  Icons.image_not_supported_outlined,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  size: 28,
                 ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (thumbPath != null)
-                    ClipRRect(
-                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
-                      child: Image.file(
-                        File(thumbPath),
-                        width: 90,
-                        height: 90,
-                        fit: BoxFit.cover,
-                        cacheWidth: 180,
-                        errorBuilder: (_, __, ___) => const SizedBox(width: 90, height: 90),
-                      ),
-                    )
-                  else
-                    Container(
-                      width: 90,
-                      height: 90,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
-                      ),
-                      child: Icon(
-                        Icons.image_not_supported_outlined,
-                        color: theme.colorScheme.onSurfaceVariant,
-                        size: 28,
-                      ),
-                    ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  lineup.title,
-                                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                              Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
-                            ],
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            lineup.title,
+                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              Chip(label: Text(agentName)),
-                              Chip(label: Text(lineup.side == 'attack' ? '进攻' : '防守')),
-                              Chip(label: Text('${lineup.site}点')),
-                            ],
-                          ),
-                          if (lineup.description.trim().isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              lineup.description,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                        ),
+                        Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildMetaTag(context, agentName),
+                        _buildMetaTag(context, lineup.side == 'attack' ? '进攻' : '防守'),
+                        _buildMetaTag(context, '${lineup.site}点'),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          );
-        },
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetaTag(BuildContext context, String label) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+        ),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1,
+        ),
       ),
     );
   }

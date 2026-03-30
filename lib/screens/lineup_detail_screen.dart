@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/lineup.dart';
 import '../models/lineup_image.dart';
@@ -397,10 +398,18 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
     super.initState();
     _currentIndex = widget.initialIndex;
     _controller = PageController(initialPage: widget.initialIndex);
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+    ]);
     _controller.dispose();
     super.dispose();
   }

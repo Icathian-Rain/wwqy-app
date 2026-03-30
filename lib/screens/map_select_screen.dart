@@ -311,16 +311,6 @@ class _MapSelectScreenState extends State<MapSelectScreen> {
                                         ),
                                       ),
                                     ),
-                                    OutlinedButton.icon(
-                                      onPressed: _processing ? null : _importLineups,
-                                      icon: const Icon(Icons.file_upload_outlined),
-                                      label: const Text('导入 ZIP'),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: _processing ? null : _exportLineups,
-                                      icon: const Icon(Icons.file_download_outlined),
-                                      label: const Text('导出当前游戏'),
-                                    ),
                                   ],
                                 ),
                               ],
